@@ -16,9 +16,21 @@ export interface StartedCall {
   status: "ringing";
 }
 
+export interface AcceptedCall {
+  callId: string;
+  userId: string;
+}
+
+export interface RejectedCall {
+  callId: string;
+  userId: string;
+}
+
 export interface CallSocketEvents {
   started: (call: StartedCall) => void;
   incoming: (call: IncomingCall) => void;
+  accepted: (payload: AcceptedCall) => void;
+  rejected: (payload: RejectedCall) => void;
   answer: (payload: CallAnswerPayload) => void;
   offer: (payload: CallOfferPayload) => void;
   iceCandidate: (payload: IceCandidatePayload) => void;
@@ -49,12 +61,15 @@ export class CallSocket {
       this.emitEvent("disconnect");
     });
 
-    this.socket.on("connect_error", (error: Error) => {
-      this.emitEvent(
-        "error",
-        error.message || "تعذر الاتصال بالخادم",
-      );
-    });
+    this.socket.on(
+      "connect_error",
+      (error: Error) => {
+        this.emitEvent(
+          "error",
+          error.message || "تعذر الاتصال بالخادم",
+        );
+      },
+    );
 
     this.socket.on(
       "call:started",
@@ -67,6 +82,20 @@ export class CallSocket {
       "call:incoming",
       (payload: IncomingCall) => {
         this.emitEvent("incoming", payload);
+      },
+    );
+
+    this.socket.on(
+      "call:accept",
+      (payload: AcceptedCall) => {
+        this.emitEvent("accepted", payload);
+      },
+    );
+
+    this.socket.on(
+      "call:reject",
+      (payload: RejectedCall) => {
+        this.emitEvent("rejected", payload);
       },
     );
 
@@ -141,17 +170,11 @@ export class CallSocket {
 
   sendOffer(
     callId: string,
-    offer: RTCSessionDescriptionInit,
+    payload: CallOfferPayload,
   ): void {
     this.requireSocket();
 
-    this.socket!.emit("call:offer", {
-      callId,
-      callerId: "",
-      receiverId: "",
-      type: "audio",
-      offer,
-    });
+    this.socket!.emit("call:offer", payload);
   }
 
   sendAnswer(
@@ -193,6 +216,8 @@ export class CallSocket {
   > = {
     started: [],
     incoming: [],
+    accepted: [],
+    rejected: [],
     answer: [],
     offer: [],
     iceCandidate: [],
