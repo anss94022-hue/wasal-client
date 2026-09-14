@@ -51,10 +51,7 @@ app.innerHTML = `
           />
         </div>
 
-        <button
-          id="connectButton"
-          class="btn primary"
-        >
+        <button id="connectButton" class="btn primary">
           اتصال بالسيرفر
         </button>
       </section>
@@ -89,35 +86,23 @@ app.innerHTML = `
         </button>
       </section>
 
-      <section
-        id="incomingPanel"
-        class="card incoming"
-      >
+      <section id="incomingPanel" class="card incoming">
         <h2>📞 مكالمة واردة</h2>
 
         <p id="incomingText"></p>
 
         <div class="row">
-          <button
-            id="acceptButton"
-            class="btn success"
-          >
+          <button id="acceptButton" class="btn success">
             قبول
           </button>
 
-          <button
-            id="rejectButton"
-            class="btn danger"
-          >
+          <button id="rejectButton" class="btn danger">
             رفض
           </button>
         </div>
       </section>
 
-      <section
-        id="callPanel"
-        class="card call-panel"
-      >
+      <section id="callPanel" class="card call-panel">
         <div id="callStatus" class="status">
           لا توجد مكالمة
         </div>
@@ -132,9 +117,7 @@ app.innerHTML = `
               playsinline
             ></video>
 
-            <span class="video-label">
-              أنت
-            </span>
+            <span class="video-label">أنت</span>
           </div>
 
           <div class="video-box">
@@ -144,33 +127,22 @@ app.innerHTML = `
               playsinline
             ></video>
 
-            <span class="video-label">
-              الطرف الآخر
-            </span>
+            <span class="video-label">الطرف الآخر</span>
           </div>
 
         </div>
 
         <div class="row">
 
-          <button
-            id="microphoneButton"
-            class="btn"
-          >
+          <button id="microphoneButton" class="btn">
             🎙️ كتم الميكروفون
           </button>
 
-          <button
-            id="cameraButton"
-            class="btn"
-          >
+          <button id="cameraButton" class="btn">
             📷 إيقاف الكاميرا
           </button>
 
-          <button
-            id="endCallButton"
-            class="btn danger"
-          >
+          <button id="endCallButton" class="btn danger">
             🔴 إنهاء المكالمة
           </button>
 
@@ -200,47 +172,31 @@ const callTypeSelect =
   document.querySelector<HTMLSelectElement>("#callType")!;
 
 const connectButton =
-  document.querySelector<HTMLButtonElement>(
-    "#connectButton",
-  )!;
+  document.querySelector<HTMLButtonElement>("#connectButton")!;
 
 const startCallButton =
-  document.querySelector<HTMLButtonElement>(
-    "#startCallButton",
-  )!;
+  document.querySelector<HTMLButtonElement>("#startCallButton")!;
 
 const incomingPanel =
-  document.querySelector<HTMLDivElement>(
-    "#incomingPanel",
-  )!;
+  document.querySelector<HTMLDivElement>("#incomingPanel")!;
 
 const incomingText =
-  document.querySelector<HTMLParagraphElement>(
-    "#incomingText",
-  )!;
+  document.querySelector<HTMLParagraphElement>("#incomingText")!;
 
 const acceptButton =
-  document.querySelector<HTMLButtonElement>(
-    "#acceptButton",
-  )!;
+  document.querySelector<HTMLButtonElement>("#acceptButton")!;
 
 const rejectButton =
-  document.querySelector<HTMLButtonElement>(
-    "#rejectButton",
-  )!;
+  document.querySelector<HTMLButtonElement>("#rejectButton")!;
 
 const callPanel =
   document.querySelector<HTMLDivElement>("#callPanel")!;
 
 const localVideo =
-  document.querySelector<HTMLVideoElement>(
-    "#localVideo",
-  )!;
+  document.querySelector<HTMLVideoElement>("#localVideo")!;
 
 const remoteVideo =
-  document.querySelector<HTMLVideoElement>(
-    "#remoteVideo",
-  )!;
+  document.querySelector<HTMLVideoElement>("#remoteVideo")!;
 
 const microphoneButton =
   document.querySelector<HTMLButtonElement>(
@@ -279,12 +235,11 @@ const webrtc = new CallWebRTC(
 );
 
 let connected = false;
-
 let activeCallId: string | null = null;
-
-let incomingCall: IncomingCall | null = null;
-
 let activeCallType: "audio" | "video" | null = null;
+let activeCallerId: string | null = null;
+let activeReceiverId: string | null = null;
+let incomingCall: IncomingCall | null = null;
 
 socket.on("connect", () => {
   connected = true;
@@ -305,24 +260,103 @@ socket.on("disconnect", () => {
 });
 
 socket.on("error", (message) => {
-  statusElement.textContent = `خطأ: ${message}`;
+  statusElement.textContent =
+    `خطأ: ${message}`;
 });
 
+/*
+ * مهم:
+ * السيرفر هو الذي ينشئ callId الحقيقي.
+ * لا ننشئ callId محليًا.
+ */
+socket.on("started", (call) => {
+  activeCallId = call.callId;
+  activeCallType = call.type;
+  activeCallerId = call.callerId;
+  activeReceiverId = call.receiverId;
+
+  showCallPanel();
+
+  callStatusElement.textContent =
+    "جاري انتظار قبول المكالمة...";
+});
+
+/*
+ * الطرف المستقبل يستقبل المكالمة.
+ */
 socket.on("incoming", (call) => {
   incomingCall = call;
+
+  activeCallId = call.callId;
+  activeCallType = call.type;
+  activeCallerId = call.callerId;
+  activeReceiverId = call.receiverId;
 
   incomingPanel.classList.add("active");
 
   incomingText.textContent =
-    `مكالمة ${call.type === "video" ? "مرئية" : "صوتية"} من المستخدم ${call.callerId}`;
+    `مكالمة ${
+      call.type === "video" ? "مرئية" : "صوتية"
+    } من المستخدم ${call.callerId}`;
 
   callStatusElement.textContent =
     "مكالمة واردة";
 });
 
+/*
+ * لا ننشئ WebRTC Offer إلا بعد أن
+ * يخبرنا السيرفر أن المستقبل قبل المكالمة.
+ */
+socket.on("accepted", async (payload) => {
+  if (payload.callId !== activeCallId) {
+    return;
+  }
+
+  if (
+    !activeCallType ||
+    !activeCallerId ||
+    !activeReceiverId
+  ) {
+    showError(
+      new Error("CALL_STATE_INCOMPLETE"),
+    );
+    return;
+  }
+
+  try {
+    const localStream =
+      await webrtc.startCaller(
+        activeCallId,
+        activeCallType,
+        activeCallerId,
+        activeReceiverId,
+      );
+
+    localVideo.srcObject = localStream;
+
+    showCallPanel();
+
+    callStatusElement.textContent =
+      "تم قبول المكالمة، جاري الاتصال...";
+  } catch (error) {
+    showError(error);
+  }
+});
+
+socket.on("rejected", (payload) => {
+  if (payload.callId !== activeCallId) {
+    return;
+  }
+
+  callStatusElement.textContent =
+    "تم رفض المكالمة";
+
+  cleanupCall();
+});
+
 socket.on("offer", async (payload) => {
-  if (!activeCallId) {
-    activeCallId = payload.callId;
+  if (payload.callId !== activeCallId) {
+    return;
   }
 
   try {
@@ -339,8 +373,14 @@ socket.on("offer", async (payload) => {
 });
 
 socket.on("answer", async (payload) => {
+  if (payload.callId !== activeCallId) {
+    return;
+  }
+
   try {
-    await webrtc.handleAnswer(payload.answer);
+    await webrtc.handleAnswer(
+      payload.answer,
+    );
 
     callStatusElement.textContent =
       "تم الاتصال بالطرف الآخر";
@@ -350,6 +390,10 @@ socket.on("answer", async (payload) => {
 });
 
 socket.on("iceCandidate", async (payload) => {
+  if (payload.callId !== activeCallId) {
+    return;
+  }
+
   try {
     await webrtc.handleIceCandidate(
       payload.candidate,
@@ -374,7 +418,6 @@ socket.on("end", (payload: CallEndPayload) => {
 
 connectButton.addEventListener("click", () => {
   const token = tokenInput.value.trim();
-
   const serverUrl = serverUrlInput.value.trim();
 
   if (!token) {
@@ -389,13 +432,17 @@ connectButton.addEventListener("click", () => {
     return;
   }
 
-  socket.connect(serverUrl, token);
+  try {
+    socket.connect(serverUrl, token);
 
-  statusElement.textContent =
-    "جاري الاتصال بالسيرفر...";
+    statusElement.textContent =
+      "جاري الاتصال بالسيرفر...";
+  } catch (error) {
+    showError(error);
+  }
 });
 
-startCallButton.addEventListener("click", async () => {
+startCallButton.addEventListener("click", () => {
   if (!connected) {
     statusElement.textContent =
       "اتصل بالسيرفر أولًا";
@@ -415,11 +462,14 @@ startCallButton.addEventListener("click", async () => {
   }
 
   try {
-    const temporaryCallId =
-      crypto.randomUUID();
-
-    activeCallId = temporaryCallId;
+    /*
+     * لا نستخدم crypto.randomUUID هنا.
+     * السيرفر ينشئ callId الحقيقي.
+     */
+    activeCallId = null;
     activeCallType = type;
+    activeCallerId = null;
+    activeReceiverId = receiverId;
 
     socket.startCall(receiverId, type);
 
@@ -427,20 +477,6 @@ startCallButton.addEventListener("click", async () => {
 
     callStatusElement.textContent =
       "جاري إنشاء المكالمة...";
-
-    /*
-     * The server owns the real callId.
-     * The offer is created after the incoming
-     * signaling state is available.
-     *
-     * For the current server contract, the
-     * caller creates the WebRTC offer once
-     * the real call identifier is known.
-     *
-     * The initial implementation waits for
-     * the server's incoming signaling event
-     * before creating the offer.
-     */
   } catch (error) {
     showError(error);
   }
@@ -451,19 +487,28 @@ acceptButton.addEventListener("click", async () => {
     return;
   }
 
+  const call = incomingCall;
+
   try {
-    activeCallId = incomingCall.callId;
-    activeCallType = incomingCall.type;
+    activeCallId = call.callId;
+    activeCallType = call.type;
+    activeCallerId = call.callerId;
+    activeReceiverId = call.receiverId;
 
-    socket.acceptCall(incomingCall.callId);
-
+    /*
+     * تجهيز WebRTC قبل وصول Offer.
+     */
     const localStream =
       await webrtc.acceptIncomingCall(
-        incomingCall.callId,
-        incomingCall.type,
+        call.callId,
+        call.type,
+        call.callerId,
+        call.receiverId,
       );
 
     localVideo.srcObject = localStream;
+
+    socket.acceptCall(call.callId);
 
     showCallPanel();
 
@@ -483,7 +528,12 @@ rejectButton.addEventListener("click", () => {
     return;
   }
 
-  socket.rejectCall(incomingCall.callId);
+  try {
+    socket.rejectCall(incomingCall.callId);
+  } catch (error) {
+    showError(error);
+    return;
+  }
 
   incomingPanel.classList.remove("active");
 
@@ -494,28 +544,42 @@ rejectButton.addEventListener("click", () => {
 });
 
 microphoneButton.addEventListener("click", () => {
-  const enabled =
-    webrtc.toggleMicrophone();
+  try {
+    const enabled =
+      webrtc.toggleMicrophone();
 
-  microphoneButton.textContent =
-    enabled
-      ? "🎙️ كتم الميكروفون"
-      : "🔇 فتح الميكروفون";
+    microphoneButton.textContent =
+      enabled
+        ? "🎙️ كتم الميكروفون"
+        : "🔇 فتح الميكروفون";
+  } catch (error) {
+    showError(error);
+  }
 });
 
 cameraButton.addEventListener("click", () => {
-  const enabled =
-    webrtc.toggleCamera();
+  try {
+    const enabled =
+      webrtc.toggleCamera();
 
-  cameraButton.textContent =
-    enabled
-      ? "📷 إيقاف الكاميرا"
-      : "📷 تشغيل الكاميرا";
+    cameraButton.textContent =
+      enabled
+        ? "📷 إيقاف الكاميرا"
+        : "📷 تشغيل الكاميرا";
+  } catch (error) {
+    showError(error);
+  }
 });
 
 endCallButton.addEventListener("click", () => {
-  if (activeCallId) {
-    socket.endCall(activeCallId);
+  const callId = activeCallId;
+
+  if (callId) {
+    try {
+      socket.endCall(callId);
+    } catch (error) {
+      showError(error);
+    }
   }
 
   cleanupCall();
@@ -536,6 +600,8 @@ function cleanupCall(): void {
 
   activeCallId = null;
   activeCallType = null;
+  activeCallerId = null;
+  activeReceiverId = null;
 
   callPanel.classList.remove("active");
 
