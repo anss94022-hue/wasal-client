@@ -8,7 +8,16 @@ import type {
   IncomingCall,
 } from "./call.types";
 
+export interface StartedCall {
+  callId: string;
+  callerId: string;
+  receiverId: string;
+  type: "audio" | "video";
+  status: "ringing";
+}
+
 export interface CallSocketEvents {
+  started: (call: StartedCall) => void;
   incoming: (call: IncomingCall) => void;
   answer: (payload: CallAnswerPayload) => void;
   offer: (payload: CallOfferPayload) => void;
@@ -46,6 +55,13 @@ export class CallSocket {
         error.message || "تعذر الاتصال بالخادم",
       );
     });
+
+    this.socket.on(
+      "call:started",
+      (payload: StartedCall) => {
+        this.emitEvent("started", payload);
+      },
+    );
 
     this.socket.on(
       "call:incoming",
@@ -93,7 +109,10 @@ export class CallSocket {
     this.socket = null;
   }
 
-  startCall(receiverId: string, type: "audio" | "video"): void {
+  startCall(
+    receiverId: string,
+    type: "audio" | "video",
+  ): void {
     this.requireSocket();
 
     this.socket!.emit("call:start", {
@@ -105,25 +124,19 @@ export class CallSocket {
   acceptCall(callId: string): void {
     this.requireSocket();
 
-    this.socket!.emit("call:accept", {
-      callId,
-    });
+    this.socket!.emit("call:accept", callId);
   }
 
   rejectCall(callId: string): void {
     this.requireSocket();
 
-    this.socket!.emit("call:reject", {
-      callId,
-    });
+    this.socket!.emit("call:reject", callId);
   }
 
   endCall(callId: string): void {
     this.requireSocket();
 
-    this.socket!.emit("call:end", {
-      callId,
-    });
+    this.socket!.emit("call:end", callId);
   }
 
   sendOffer(
@@ -134,6 +147,9 @@ export class CallSocket {
 
     this.socket!.emit("call:offer", {
       callId,
+      callerId: "",
+      receiverId: "",
+      type: "audio",
       offer,
     });
   }
@@ -175,6 +191,7 @@ export class CallSocket {
     keyof CallSocketEvents,
     Array<(...args: unknown[]) => void>
   > = {
+    started: [],
     incoming: [],
     answer: [],
     offer: [],
