@@ -21,6 +21,10 @@ export class CallWebRTC {
 
   private currentType: CallType | null = null;
 
+  private currentCallerId: string | null = null;
+
+  private currentReceiverId: string | null = null;
+
   private readonly socket: CallSocket;
 
   private readonly onRemoteStream: (
@@ -40,14 +44,22 @@ export class CallWebRTC {
   ) {
     this.socket = socket;
     this.onRemoteStream = onRemoteStream;
-    this.onConnectionStateChange = onConnectionStateChange;
+    this.onConnectionStateChange =
+      onConnectionStateChange;
   }
 
   async startCaller(
     callId: string,
     type: CallType,
+    callerId: string,
+    receiverId: string,
   ): Promise<MediaStream> {
-    await this.prepare(callId, type);
+    await this.prepare(
+      callId,
+      type,
+      callerId,
+      receiverId,
+    );
 
     const offer =
       await this.peerConnection!.createOffer();
@@ -56,7 +68,13 @@ export class CallWebRTC {
       offer,
     );
 
-    this.socket.sendOffer(callId, offer);
+    this.socket.sendOffer(callId, {
+      callId,
+      callerId,
+      receiverId,
+      type,
+      offer,
+    });
 
     return this.localStream!;
   }
@@ -64,11 +82,15 @@ export class CallWebRTC {
   async acceptIncomingCall(
     callId: string,
     type: CallType,
+    callerId: string,
+    receiverId: string,
   ): Promise<MediaStream> {
-    await this.prepare(callId, type);
-
-    this.currentCallId = callId;
-    this.currentType = type;
+    await this.prepare(
+      callId,
+      type,
+      callerId,
+      receiverId,
+    );
 
     return this.localStream!;
   }
@@ -120,7 +142,8 @@ export class CallWebRTC {
   }
 
   toggleMicrophone(): boolean {
-    const track = this.localStream?.getAudioTracks()[0];
+    const track =
+      this.localStream?.getAudioTracks()[0];
 
     if (!track) {
       return false;
@@ -132,7 +155,8 @@ export class CallWebRTC {
   }
 
   toggleCamera(): boolean {
-    const track = this.localStream?.getVideoTracks()[0];
+    const track =
+      this.localStream?.getVideoTracks()[0];
 
     if (!track) {
       return false;
@@ -180,16 +204,22 @@ export class CallWebRTC {
 
     this.currentCallId = null;
     this.currentType = null;
+    this.currentCallerId = null;
+    this.currentReceiverId = null;
   }
 
   private async prepare(
     callId: string,
     type: CallType,
+    callerId: string,
+    receiverId: string,
   ): Promise<void> {
     this.close();
 
     this.currentCallId = callId;
     this.currentType = type;
+    this.currentCallerId = callerId;
+    this.currentReceiverId = receiverId;
 
     const constraints: MediaStreamConstraints =
       type === "video"
@@ -231,7 +261,14 @@ export class CallWebRTC {
 
     this.peerConnection.ontrack = (event) => {
       for (const track of event.streams[0].getTracks()) {
-        this.remoteStream!.addTrack(track);
+        if (
+          !this.remoteStream!.getTracks().some(
+            (existingTrack) =>
+              existingTrack.id === track.id,
+          )
+        ) {
+          this.remoteStream!.addTrack(track);
+        }
       }
 
       this.onRemoteStream(this.remoteStream!);
